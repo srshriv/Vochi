@@ -1,14 +1,12 @@
 import os
-from openai import OpenAI
+from google import genai
+from google.genai import types
 from dotenv import load_dotenv
 
 load_dotenv()
 
-
-client = OpenAI(
-    api_key=os.getenv("OPENAI_API_KEY"),
-    base_url=os.getenv("OPENAI_BASE_URL", "https://api.groq.com/openai/v1")
-)
+client = genai.Client()
+MODEL_NAME = "gemini-2.5-flash"
 
 def build_voice_prompt(name: str, niche: str, language: str, sample_content: str) -> str:
     prompt = f"""
@@ -22,14 +20,13 @@ def build_voice_prompt(name: str, niche: str, language: str, sample_content: str
     "You are {name}, a niche creator. You speak in [describe their tone]. You use [describe vocabulary/slang patterns]. Your messages are [describe length and structure]. You always [describe any consistent habits]. Never break character."
     Return only the system prompt, nothing else.
     """
-    response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=[{"role": "user", "content": prompt}]
+    response = client.models.generate_content(
+        model=MODEL_NAME,
+        contents=prompt
     )
-    return response.choices[0].message.content
+    return response.text.strip()
 
 def classify_intent(message: str) -> str:
-    
     prompt = f"""
     Classify this message into EXACTLY one of these categories. Respond with only the category word, nothing else:
     product_query, general, complaint
@@ -39,23 +36,25 @@ def classify_intent(message: str) -> str:
     One word only:
     """
     try:
-        response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=10,
-            temperature=0  
+        config = types.GenerateContentConfig(
+            temperature=0.0,
+            max_output_tokens=10
         )
-        result = response.choices[0].message.content.strip().lower()
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=prompt,
+            config=config
+        )
+        result = response.text.strip().lower()
     except Exception:
         return "general"
     
     valid_intents = ["product_query", "general", "complaint"]
     if result not in valid_intents:
-        return "general"  
+        return "general"
     return result
 
 def detect_language(message: str) -> str:
-    
     prompt = f"""
     Detect the language of this message. Respond with EXACTLY one word from this list, nothing else, no explanation:
     hinglish, hindi, english, tamil, telugu, bengali, kannada, marathi
@@ -67,19 +66,22 @@ def detect_language(message: str) -> str:
     One word only:
     """
     try:
-        response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=10,
-            temperature=0  
+        config = types.GenerateContentConfig(
+            temperature=0.0,
+            max_output_tokens=10
         )
-        result = response.choices[0].message.content.strip().lower()
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=prompt,
+            config=config
+        )
+        result = response.text.strip().lower()
     except Exception:
         return "hinglish"
     
     valid_languages = ["hinglish", "hindi", "english", "tamil", "telugu", "bengali", "kannada", "marathi"]
     if result not in valid_languages:
-        return "hinglish"  # Strict fallback logic requested by Sristee
+        return "hinglish"
     return result
 
 def generate_response(voice_prompt: str, message: str, intent: str, language: str, products: list) -> str:
@@ -100,15 +102,19 @@ def generate_response(voice_prompt: str, message: str, intent: str, language: st
     Never make up product details that aren't in the list
     If you don't know something, say you'll check and get back to them
     """
-    response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": message}
-        ],
-        max_tokens=150
-    )
-    return response.choices[0].message.content
+    try:
+        config = types.GenerateContentConfig(
+            system_instruction=system,
+            max_output_tokens=150
+        )
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=message,
+            config=config
+        )
+        return response.text.strip()
+    except Exception as e:
+        return f"Sorry, I am having trouble connecting to the Gemini service right now. (Error: {str(e)})"
 
 def rewrite_broadcast_in_creator_voice(voice_prompt: str, original_message: str, language: str) -> str:
     system = f"""
@@ -117,12 +123,13 @@ def rewrite_broadcast_in_creator_voice(voice_prompt: str, original_message: str,
     Keep it under 4 sentences. Make it feel personal and authentic, not like marketing copy.
     Write in {language}.
     """
-    response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": original_message}
-        ],
-        max_tokens=200
+    config = types.GenerateContentConfig(
+        system_instruction=system,
+        max_output_tokens=200
     )
-    return response.choices[0].message.content
+    response = client.models.generate_content(
+        model=MODEL_NAME,
+        contents=original_message,
+        config=config
+    )
+    return response.text.strip()
