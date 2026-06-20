@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Pass the Groq base URL here so it reroutes the request safely
+
 client = OpenAI(
     api_key=os.getenv("OPENAI_API_KEY"),
     base_url=os.getenv("OPENAI_BASE_URL", "https://api.groq.com/openai/v1")
@@ -23,42 +23,64 @@ def build_voice_prompt(name: str, niche: str, language: str, sample_content: str
     Return only the system prompt, nothing else.
     """
     response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",  # Changed from gpt-4o-mini
+        model="llama-3.1-8b-instant",
         messages=[{"role": "user", "content": prompt}]
     )
     return response.choices[0].message.content
 
 def classify_intent(message: str) -> str:
+    
     prompt = f"""
-    Classify this message into exactly one of these categories:
-    product_query (asking about a product, price, availability, ingredients, how to use)
-    general (greeting, general chat, off-topic)
-    complaint (unhappy, issue with order, refund)
+    Classify this message into EXACTLY one of these categories. Respond with only the category word, nothing else:
+    product_query, general, complaint
     
     Message: "{message}"
-    Return only the category name, nothing else.
+    
+    One word only:
     """
-    response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",  # Changed from gpt-4o-mini
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=20
-    )
-    return response.choices[0].message.content.strip()
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=10,
+            temperature=0  
+        )
+        result = response.choices[0].message.content.strip().lower()
+    except Exception:
+        return "general"
+    
+    valid_intents = ["product_query", "general", "complaint"]
+    if result not in valid_intents:
+        return "general"  
+    return result
 
 def detect_language(message: str) -> str:
+    
     prompt = f"""
-    Detect the language of this message. Return only one of:
+    Detect the language of this message. Respond with EXACTLY one word from this list, nothing else, no explanation:
     hinglish, hindi, english, tamil, telugu, bengali, kannada, marathi
     
+    If the message is too short or ambiguous to tell, default to: hinglish
+    
     Message: "{message}"
-    Return only the language name.
+    
+    One word only:
     """
-    response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",  # Changed from gpt-4o-mini
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=10
-    )
-    return response.choices[0].message.content.strip()
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=10,
+            temperature=0  
+        )
+        result = response.choices[0].message.content.strip().lower()
+    except Exception:
+        return "hinglish"
+    
+    valid_languages = ["hinglish", "hindi", "english", "tamil", "telugu", "bengali", "kannada", "marathi"]
+    if result not in valid_languages:
+        return "hinglish"  # Strict fallback logic requested by Sristee
+    return result
 
 def generate_response(voice_prompt: str, message: str, intent: str, language: str, products: list) -> str:
     product_context = ""
@@ -79,7 +101,7 @@ def generate_response(voice_prompt: str, message: str, intent: str, language: st
     If you don't know something, say you'll check and get back to them
     """
     response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",  # Changed from gpt-4o-mini
+        model="llama-3.1-8b-instant",
         messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": message}
@@ -96,7 +118,7 @@ def rewrite_broadcast_in_creator_voice(voice_prompt: str, original_message: str,
     Write in {language}.
     """
     response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",  # Changed from gpt-4o-mini
+        model="llama-3.1-8b-instant",
         messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": original_message}
